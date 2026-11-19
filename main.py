@@ -1,57 +1,141 @@
 import pandas as pd
+import plotly.express as px
 import requests
 import streamlit as st
-import plotly.express as px
+
+st.set_page_config(page_title="Pegelstationen", layout="wide")
 
 API_URL_STATIONS = st.secrets["API_URL_STATIONS"]
 API_URL_TSDATA = st.secrets["API_URL_TSDATA"]
 
 st.title("Pegelstationen")
 
-@st.cache_data(ttl=60)
-def load_stations():
+
+@st.cache_data(ttl=300)
+def load_stations() -> pd.DataFrame:
   response = requests.get(API_URL_STATIONS, timeout=10)
   response.raise_for_status()
-  return response.json()
+  df = pd.DataFrame(response.json())
+  df["longitude"] = df["location"].str["longitude"]
+  df["latitude"] = df["location"].str["latitude"]
+  return df
 
-def get_station_data(station_id):
-    url = f"{API_URL_TSDATA}?station_id={station_id}"
-    response = requests.get(url)
-    payload = response.json()
 
-    metriken = pd.DataFrame([payload["metriken"][i] for i in payload["metriken"]])
-    metriken = metriken.set_index("metrik_id")
-    messdaten = pd.DataFrame(payload["data"])
-    messdaten["timestamp"] = pd.to_datetime(messdaten["timestamp"])
-    messdaten = messdaten.drop(columns="station_id")
+@st.cache_data(ttl=60)
+def get_station_data(station_id: str) -> pd.DataFrame:
+  response = requests.get(
+      API_URL_TSDATA, params={"station_id": station_id}, timeout=10
+  )
+  response.raise_for_status()
+  payload = response.json()
 
-    messdaten = messdaten.melt(id_vars="timestamp", var_name="metrik_id", value_name="value")
-    messdaten["metrik_name"] = messdaten["metrik_id"].map(metriken.to_dict()["metrik_name"])
-    messdaten["metrik_einheit"] = messdaten["metrik_id"].map(metriken.to_dict()["metrik_einheit"])
-    return messdaten
+  if not payload.get("data"):
+    return pd.DataFrame()
 
-stations = pd.DataFrame(load_stations())
-stations["longitude"] = stations["location"].apply(lambda x: x["longitude"])
-stations["latitude"] = stations["location"].apply(lambda x: x["latitude"])
+  metriken = pd.DataFrame.from_dict(payload["metriken"], orient="index")
+  messdaten = pd.DataFrame(payload["data"])
+  messdaten["timestamp"] = pd.to_datetime(messdaten["timestamp"])
+  messdaten = messdaten.drop(columns="station_id", errors="ignore")
 
-fig = px.scatter_map(stations, lat="latitude", lon="longitude",color="station_id")
-st.plotly_chart(fig)
+  messdaten = messdaten.melt(
+      id_vars="timestamp", var_name="metrik_id", value_name="value"
+  )
+  messdaten["metrik_name"] = messdaten["metrik_id"].map(metriken["metrik_name"])
+  messdaten["metrik_einheit"] = messdaten["metrik_id"].map(
+      metriken["metrik_einheit"]
+  )
+  return messdaten
 
-station_id = st.selectbox(
-    "Station auswählen",
-    list(stations["station_id"]),
-    index=0
-)
 
-messdaten = get_station_data(station_id=station_id)
+try:
+  stations = load_stations()
+except requests.RequestException as e:
+  st.error(f"Fehler beim Laden der Stationen: {e}")
+  st.stop()
 
-metrik = st.selectbox("Messgröße wählen", messdaten["metrik_name"].unique())
-messdaten_single = messdaten[messdaten["metrik_name"] == metrik]
-einheit = messdaten_single["metrik_einheit"].iloc[0]
-st.line_chart(
-    data=messdaten_single,
-    x="timestamp",
-    y="value",
-    y_label=f"{metrik} ({einheit})",
-    x_label="Zeitpunkt",
-)
+station_list = stations["station_id"].tolist()
+
+# Initialisierung des Session States beim ersten Laden
+if "selected_station" not in st.session_state:
+  st.session_state.selected_station = station_list
+
+col_map, col_data = st.columns([1, 1.5])
+
+with col_map:
+  # Ausgewählte Station auf der Karte farblich hervorheben
+  stations["status"] = stations["station_id"].apply(
+      lambda x: (
+          "Ausgewählt"
+          if x == st.session_state.selected_station
+          else "Verfügbar"
+      )
+  )
+
+  fig = px.scatter_map(
+      stations,
+      lat="latitude",
+      lon="longitude",
+      color="status",
+      color_discrete_map={"Ausgewählt": "#FF4B4B", "Verfügbar": "#1F77B4"},
+      hover_name="station_id",
+      custom_data=["station_id"],
+      zoom=6,
+  )
+  fig.update_traces(marker=dict(size=12))
+  fig.update_layout(showlegend=False, margin={"r": 0, "t": 0, "l": 0, "b": 0})
+
+  # Karte mit Klick-Erkennung rendern
+  event = st.plotly_chart(
+      fig,
+      use_container_width=True,
+      on_select="rerun",
+      selection_mode="points",
+      key="station_map",
+  )
+
+  # Prüfen, ob ein Punkt auf der Karte angeklickt wurde
+  if event and event.selection and event.selection.points:
+    clicked_station = event.selection.points["customdata"]
+    if clicked_station != st.session_state.selected_station:
+      st.session_state.selected_station = clicked_station
+      st.rerun()
+
+with col_data:
+  # Selectbox direkt an den Session State binden
+  station_id = st.selectbox(
+      "Station auswählen (oder auf Karte klicken)",
+      options=station_list,
+      key="selected_station",
+  )
+
+  try:
+    messdaten = get_station_data(station_id)
+  except requests.RequestException as e:
+    st.error(f"Fehler beim Laden der Messdaten: {e}")
+    st.stop()
+
+  if messdaten.empty:
+    st.warning("Für diese Station liegen aktuell keine Messdaten vor.")
+  else:
+    metrik = st.selectbox(
+        "Messgröße wählen", messdaten["metrik_name"].dropna().unique()
+    )
+    messdaten_single = messdaten[
+        messdaten["metrik_name"] == metrik
+    ].sort_values("timestamp")
+
+    einheit = messdaten_single["metrik_einheit"].iloc
+    aktuell = messdaten_single.iloc[-1]
+
+    st.metric(
+        label=f"Aktueller Wert ({aktuell['timestamp'].strftime('%d.%m.%Y %H:%M')})",
+        value=f"{aktuell['value']:.2f} {einheit}",
+    )
+
+    st.line_chart(
+        data=messdaten_single,
+        x="timestamp",
+        y="value",
+        y_label=f"{metrik} ({einheit})",
+        x_label="Zeitpunkt",
+    )
