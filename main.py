@@ -57,12 +57,11 @@ station_list = stations["station_id"].tolist()
 
 # Initialisierung des Session States beim ersten Laden
 if "selected_station" not in st.session_state:
-  st.session_state.selected_station = station_list
+  st.session_state.selected_station = station_list[0]
 
 col_map, col_data = st.columns([1, 1.5])
 
 with col_map:
-  # Ausgewählte Station auf der Karte farblich hervorheben
   stations["status"] = stations["station_id"].apply(
       lambda x: (
           "Ausgewählt"
@@ -84,7 +83,6 @@ with col_map:
   fig.update_traces(marker=dict(size=12))
   fig.update_layout(showlegend=False, margin={"r": 0, "t": 0, "l": 0, "b": 0})
 
-  # Karte mit Klick-Erkennung rendern
   event = st.plotly_chart(
       fig,
       use_container_width=True,
@@ -93,15 +91,14 @@ with col_map:
       key="station_map",
   )
 
-  # Prüfen, ob ein Punkt auf der Karte angeklickt wurde
+  # Korrekter Zugriff über Index [0] auf Punktliste und customdata-Liste
   if event and event.selection and event.selection.points:
-    clicked_station = event.selection.points["customdata"]
+    clicked_station = event.selection.points[0]["customdata"][0]
     if clicked_station != st.session_state.selected_station:
       st.session_state.selected_station = clicked_station
       st.rerun()
 
 with col_data:
-  # Selectbox direkt an den Session State binden
   station_id = st.selectbox(
       "Station auswählen (oder auf Karte klicken)",
       options=station_list,
@@ -124,7 +121,7 @@ with col_data:
         messdaten["metrik_name"] == metrik
     ].sort_values("timestamp")
 
-    einheit = messdaten_single["metrik_einheit"].iloc
+    einheit = messdaten_single["metrik_einheit"].iloc[0]
     aktuell = messdaten_single.iloc[-1]
 
     st.metric(
