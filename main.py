@@ -45,4 +45,13 @@ station_id = st.selectbox(
 
 messdaten = get_station_data(station_id="MHP_OFOR_1")
 
-st.table(messdaten)
+metrik = st.selectbox("Messgröße wählen", messdaten["metrik_name"].unique())
+messdaten_single = messdaten[messdaten["metrik_name"] == metrik]
+einheit = messdaten_single["metrik_einheit"].iloc[0]
+st.line_chart(
+    data=messdaten_single,
+    x="timestamp",
+    y="value",
+    y_label=f"{metrik} ({einheit})",
+    x_label="Zeitpunkt",
+)
