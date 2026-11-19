@@ -7,8 +7,58 @@ st.set_page_config(page_title="Pegelstationen", layout="wide")
 
 API_URL_STATIONS = st.secrets["API_URL_STATIONS"]
 API_URL_TSDATA = st.secrets["API_URL_TSDATA"]
+API_URL_AUTH = st.secrets["API_URL_AUTH"]
 
 st.title("Pegelstationen")
+
+# Seitenkonfiguration (muss der erste Streamlit-Befehl sein)
+st.set_page_config(page_title="THW Pegel-App", page_icon="🌊", layout="wide")
+
+def authenticate_user(username: str, password: str) -> tuple[bool, str | None]:
+    """Sendet die Login-Daten an das AWS API Gateway und gibt (Erfolg, Rolle) zurück."""
+    payload = {"username": username, "password": password}
+    
+    try:
+        response = requests.post(API_URL_AUTH, json=payload, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("authenticated", False):
+                return True, data.get("role", "viewer")
+        return False, None
+    except requests.exceptions.RequestException:
+        st.error("Verbindung zum Authentifizierungs-Server fehlgeschlagen. Bitte später erneut versuchen.")
+        return False, None
+
+def login_screen():
+    """Zeigt die Login-Maske an."""
+    st.title("🌊 THW Pegel-App – Anmeldung")
+    st.write("Bitte melde dich mit deinen Zugangsdaten an.")
+    
+    with st.form("login_form"):
+        username = st.text_input("Benutzername")
+        password = st.text_input("Passwort", type="password")
+        submit = st.form_submit_button("Einloggen")
+        
+        if submit:
+            if not username or not password:
+                st.warning("Bitte Benutzername und Passwort eingeben.")
+                return
+                
+            with st.spinner("Zugangsdaten werden geprüft..."):
+                is_auth, role = authenticate_user(username.strip(), password)
+                
+            if is_auth:
+                st.session_state["authenticated"] = True
+                st.session_state["username"] = username.strip()
+                st.session_state["role"] = role
+                st.rerun()
+            else:
+                st.error("Benutzername oder Passwort ist falsch.")
+
+# --- ZUGRIFFSKONTROLLE ---
+if not st.session_state.get("authenticated", False):
+    login_screen()
+    st.stop()
 
 
 @st.cache_data(ttl=300)
