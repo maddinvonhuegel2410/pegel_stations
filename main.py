@@ -156,7 +156,7 @@ with col_data:
       if messdaten_single.empty:
         continue
 
-      einheit = messdaten_single["metrik_einheit"].iloc
+      einheit = messdaten_single["metrik_einheit"].values[0]
       aktuell = messdaten_single.iloc[-1]
 
       st.subheader(f"{metrik} ({einheit})")
