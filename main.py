@@ -55,7 +55,7 @@ except requests.RequestException as e:
 
 station_list = stations["station_id"].tolist()
 
-# Initialisierung des Session States beim ersten Laden
+# Startwert im Session State setzen
 if "selected_station" not in st.session_state:
   st.session_state.selected_station = station_list[0]
 
@@ -70,6 +70,10 @@ with col_map:
       )
   )
 
+  # Mittelpunkt aller Stationen für den Startausschnitt berechnen
+  center_lat = stations["latitude"].mean()
+  center_lon = stations["longitude"].mean()
+
   fig = px.scatter_map(
       stations,
       lat="latitude",
@@ -78,7 +82,8 @@ with col_map:
       color_discrete_map={"Ausgewählt": "#FF4B4B", "Verfügbar": "#1F77B4"},
       hover_name="station_id",
       custom_data=["station_id"],
-      zoom=6,
+      center={"lat": center_lat, "lon": center_lon},
+      zoom=7,
   )
   fig.update_traces(marker=dict(size=12))
   fig.update_layout(showlegend=False, margin={"r": 0, "t": 0, "l": 0, "b": 0})
@@ -91,7 +96,6 @@ with col_map:
       key="station_map",
   )
 
-  # Korrekter Zugriff über Index [0] auf Punktliste und customdata-Liste
   if event and event.selection and event.selection.points:
     clicked_station = event.selection.points[0]["customdata"][0]
     if clicked_station != st.session_state.selected_station:
@@ -114,25 +118,35 @@ with col_data:
   if messdaten.empty:
     st.warning("Für diese Station liegen aktuell keine Messdaten vor.")
   else:
-    metrik = st.selectbox(
-        "Messgröße wählen", messdaten["metrik_name"].dropna().unique()
-    )
-    messdaten_single = messdaten[
-        messdaten["metrik_name"] == metrik
-    ].sort_values("timestamp")
+    alle_metriken = messdaten["metrik_name"].dropna().unique()
 
-    einheit = messdaten_single["metrik_einheit"].iloc[0]
-    aktuell = messdaten_single.iloc[-1]
+    # Alle Metriken nacheinander darstellen
+    for metrik in alle_metriken:
+      messdaten_single = (
+          messdaten[messdaten["metrik_name"] == metrik]
+          .dropna(subset=["value"])
+          .sort_values("timestamp")
+      )
 
-    st.metric(
-        label=f"Aktueller Wert ({aktuell['timestamp'].strftime('%d.%m.%Y %H:%M')})",
-        value=f"{aktuell['value']:.2f} {einheit}",
-    )
+      if messdaten_single.empty:
+        continue
 
-    st.line_chart(
-        data=messdaten_single,
-        x="timestamp",
-        y="value",
-        y_label=f"{metrik} ({einheit})",
-        x_label="Zeitpunkt",
-    )
+      einheit = messdaten_single["metrik_einheit"].iloc[0]
+      aktuell = messdaten_single.iloc[-1]
+
+      st.subheader(f"{metrik} ({einheit})")
+      st.metric(
+          label=(
+              f"Aktueller Wert ({aktuell['timestamp'].strftime('%d.%m.%Y %H:%M')})"
+          ),
+          value=f"{aktuell['value']:.2f} {einheit}",
+      )
+
+      st.line_chart(
+          data=messdaten_single,
+          x="timestamp",
+          y="value",
+          y_label=f"{metrik} ({einheit})",
+          x_label="Zeitpunkt",
+      )
+      st.divider()
