@@ -44,3 +44,5 @@ station_id = st.selectbox(
 )
 
 messdaten = get_station_data(station_id="MHP_OFOR_1")
+
+st.table(messdaten)
