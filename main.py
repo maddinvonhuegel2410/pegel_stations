@@ -156,11 +156,12 @@ with col_map:
       key="station_map",
   )
 
-  if event and event.selection and event.selection.points:
-    clicked_station = event.selection.points["customdata"]
+if event and event.selection and event.selection.points:
+    clicked_station = event.selection.points[0]["customdata"][0]
     if clicked_station != st.session_state.selected_station:
-      st.session_state.selected_station = clicked_station
-      st.rerun()
+        st.session_state.selected_station = clicked_station
+        st.rerun()
+
 
 with col_data:
   col_select, col_download = st.columns([2, 1], vertical_alignment="bottom")
