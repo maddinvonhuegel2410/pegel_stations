@@ -3,12 +3,12 @@ import requests
 import streamlit as st
 import plotly.express as px
 
-API_URL = st.secrets["API_URL"]
+API_URL_STATIONS = st.secrets["API_URL_STATIONS"]
 st.title("🌊 Pegelstationen")
 
 @st.cache_data(ttl=60)
 def load_stations():
-  response = requests.get(API_URL, timeout=10)
+  response = requests.get(API_URL_STATIONS, timeout=10)
   response.raise_for_status()
   return response.json()
 
