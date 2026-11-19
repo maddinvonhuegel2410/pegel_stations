@@ -43,7 +43,7 @@ station_id = st.selectbox(
     index=0
 )
 
-messdaten = get_station_data(station_id="MHP_OFOR_1")
+messdaten = get_station_data(station_id=station_id)
 
 metrik = st.selectbox("Messgröße wählen", messdaten["metrik_name"].unique())
 messdaten_single = messdaten[messdaten["metrik_name"] == metrik]
