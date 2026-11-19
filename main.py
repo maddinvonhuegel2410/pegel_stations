@@ -47,6 +47,18 @@ def get_station_data(station_id: str) -> pd.DataFrame:
   return messdaten
 
 
+def prepare_csv(df: pd.DataFrame) -> bytes:
+  # Tabelle für den Export wieder ins breite Format bringen
+  df_export = df.copy()
+  df_export["spalte"] = (
+      df_export["metrik_name"] + " (" + df_export["metrik_einheit"] + ")"
+  )
+  pivoted = df_export.pivot(
+      index="timestamp", columns="spalte", values="value"
+  ).sort_index()
+  return pivoted.to_csv(sep=";", decimal=",").encode("utf-8-sig")
+
+
 try:
   stations = load_stations()
 except requests.RequestException as e:
@@ -57,7 +69,7 @@ station_list = stations["station_id"].tolist()
 
 # Startwert im Session State setzen
 if "selected_station" not in st.session_state:
-  st.session_state.selected_station = station_list[0]
+  st.session_state.selected_station = station_list
 
 col_map, col_data = st.columns([1, 1.5])
 
@@ -70,11 +82,10 @@ with col_map:
       )
   )
 
-  # Mittelpunkt aller Stationen für den Startausschnitt berechnen
   center_lat = stations["latitude"].mean()
   center_lon = stations["longitude"].mean()
 
-  fig = px.scatter_map(
+  fig_map = px.scatter_map(
       stations,
       lat="latitude",
       lon="longitude",
@@ -85,11 +96,13 @@ with col_map:
       center={"lat": center_lat, "lon": center_lon},
       zoom=7,
   )
-  fig.update_traces(marker=dict(size=12))
-  fig.update_layout(showlegend=False, margin={"r": 0, "t": 0, "l": 0, "b": 0})
+  fig_map.update_traces(marker=dict(size=12))
+  fig_map.update_layout(
+      showlegend=False, margin={"r": 0, "t": 0, "l": 0, "b": 0}
+  )
 
   event = st.plotly_chart(
-      fig,
+      fig_map,
       use_container_width=True,
       on_select="rerun",
       selection_mode="points",
@@ -97,17 +110,20 @@ with col_map:
   )
 
   if event and event.selection and event.selection.points:
-    clicked_station = event.selection.points[0]["customdata"][0]
+    clicked_station = event.selection.points["customdata"]
     if clicked_station != st.session_state.selected_station:
       st.session_state.selected_station = clicked_station
       st.rerun()
 
 with col_data:
-  station_id = st.selectbox(
-      "Station auswählen (oder auf Karte klicken)",
-      options=station_list,
-      key="selected_station",
-  )
+  col_select, col_download = st.columns([2, 1], vertical_alignment="bottom")
+
+  with col_select:
+    station_id = st.selectbox(
+        "Station auswählen (oder auf Karte klicken)",
+        options=station_list,
+        key="selected_station",
+    )
 
   try:
     messdaten = get_station_data(station_id)
@@ -118,9 +134,18 @@ with col_data:
   if messdaten.empty:
     st.warning("Für diese Station liegen aktuell keine Messdaten vor.")
   else:
+    with col_download:
+      csv_bytes = prepare_csv(messdaten)
+      st.download_button(
+          label="📥 CSV herunterladen",
+          data=csv_bytes,
+          file_name=f"messdaten_{station_id}.csv",
+          mime="text/csv",
+          use_container_width=True,
+      )
+
     alle_metriken = messdaten["metrik_name"].dropna().unique()
 
-    # Alle Metriken nacheinander darstellen
     for metrik in alle_metriken:
       messdaten_single = (
           messdaten[messdaten["metrik_name"] == metrik]
@@ -131,7 +156,7 @@ with col_data:
       if messdaten_single.empty:
         continue
 
-      einheit = messdaten_single["metrik_einheit"].iloc[0]
+      einheit = messdaten_single["metrik_einheit"].iloc
       aktuell = messdaten_single.iloc[-1]
 
       st.subheader(f"{metrik} ({einheit})")
@@ -142,11 +167,22 @@ with col_data:
           value=f"{aktuell['value']:.2f} {einheit}",
       )
 
-      st.line_chart(
-          data=messdaten_single,
+      fig_line = px.line(
+          messdaten_single,
           x="timestamp",
           y="value",
-          y_label=f"{metrik} ({einheit})",
-          x_label="Zeitpunkt",
+          labels={
+              "timestamp": "Zeitpunkt",
+              "value": f"{metrik} ({einheit})",
+          },
       )
+      # Y-Achse eng an den tatsächlichen Wertebereich anpassen
+      fig_line.update_yaxes(autorange=True, fixedrange=False)
+      fig_line.update_layout(
+          height=300,
+          margin={"r": 10, "t": 10, "l": 10, "b": 10},
+          hovermode="x unified",
+      )
+
+      st.plotly_chart(fig_line, use_container_width=True)
       st.divider()
