@@ -11,8 +11,6 @@ API_URL_AUTH = st.secrets["API_URL_AUTH"]
 
 st.title("Pegelstationen")
 
-# Seitenkonfiguration (muss der erste Streamlit-Befehl sein)
-st.set_page_config(page_title="THW Pegel-App", page_icon="🌊", layout="wide")
 
 def authenticate_user(username: str, password: str) -> tuple[bool, str | None]:
     """Sendet die Login-Daten an das AWS API Gateway und gibt (Erfolg, Rolle) zurück."""
