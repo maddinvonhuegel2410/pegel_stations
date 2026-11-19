@@ -29,7 +29,6 @@ def authenticate_user(username: str, password: str) -> tuple[bool, str | None]:
 
 def login_screen():
     """Zeigt die Login-Maske an."""
-    st.title("Pegelstationen")
     st.write("Bitte melde dich mit deinen Zugangsdaten an.")
     
     with st.form("login_form"):
